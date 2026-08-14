@@ -9,16 +9,18 @@ set -e
 BASE="${KERNEL_BASE:-$HOME/kernel}"
 SRC="$BASE/src"
 CLANG="$BASE/clang"
-WINCFG="$PROJECT_DIR/docker-kernel.config"
+BRANCH="${BRANCH:-lineage-23.2}"
 
 mkdir -p "$BASE"
 
 # ---------- kernel ----------
 if [ -d "$SRC/.git" ]; then
-    echo ">> kernel ja clonado em $SRC"
+    echo ">> kernel ja clonado; sincronizando com $BRANCH"
+    git -C "$SRC" fetch --depth=1 origin "$BRANCH"
+    git -C "$SRC" checkout -B "$BRANCH" "origin/$BRANCH"
 else
-    echo "=== clonando o kernel (LineageOS universal9830, lineage-23.2) ==="
-    git clone --depth=1 -b "${BRANCH:-lineage-23.2}" \
+    echo "=== clonando o kernel (LineageOS universal9830, $BRANCH) ==="
+    git clone --depth=1 -b "$BRANCH" \
         https://github.com/LineageOS/android_kernel_samsung_universal9830 "$SRC"
 fi
 
@@ -33,12 +35,16 @@ else
 fi
 
 # ---------- fragmento docker ----------
-if [ ! -f "$WINCFG" ]; then
-    echo "!! nao encontrei $WINCFG"
-    exit 1
+# Quem instala de verdade e o 04-build.sh, que escolhe entre o fragmento
+# completo e o minimo. Aqui so adiantamos uma copia para o caso de alguem
+# querer inspecionar a arvore antes de compilar - por isso nao e fatal.
+FRAG="$PROJECT_DIR/config/${FRAGMENTO:-docker-kernel.config}"
+if [ -f "$FRAG" ]; then
+    tr -d '\r' < "$FRAG" > "$SRC/arch/arm64/configs/docker.config"
+    echo ">> docker.config adiantado a partir de $FRAG"
+else
+    echo ">> fragmento sera instalado pelo 04-build.sh"
 fi
-tr -d '\r' < "$WINCFG" > "$SRC/arch/arm64/configs/docker.config"
-echo ">> docker.config instalado em arch/arm64/configs/"
 
 # ---------- conferencia ----------
 echo
