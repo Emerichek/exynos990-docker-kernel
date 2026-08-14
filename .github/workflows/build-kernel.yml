@@ -1,0 +1,151 @@
+name: Compilar kernel
+
+# Dispare manualmente em Actions -> Compilar kernel -> Run workflow.
+# Serve para nao precisar de WSL nem dos 30 GB da arvore no PC:
+# o runner compila e voce baixa a Image pronta.
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch do kernel do LineageOS (tem que casar com a ROM instalada)'
+        required: true
+        default: 'lineage-23.2'
+      device:
+        description: 'Fragmento do aparelho: y2s, x1s, z3s, c1s, c2s, r8s'
+        required: true
+        default: 'y2s'
+      fragmento:
+        description: 'Conjunto de opcoes: docker-kernel.config (completo) ou docker-minimal.config'
+        required: true
+        default: 'docker-kernel.config'
+      clang:
+        description: 'Versao do clang (veja TARGET_KERNEL_CLANG_VERSION no BoardConfigCommon.mk da ROM)'
+        required: true
+        default: 'r416183b'
+      release:
+        description: 'Publicar como release, alem do artefato'
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    env:
+      KERNEL_BASE: ${{ github.workspace }}/../kernel
+      BRANCH:      ${{ inputs.branch }}
+      CLANG_VER:   ${{ inputs.clang }}
+      DEVICE:      ${{ inputs.device }}
+      FRAGMENTO:   ${{ inputs.fragmento }}
+      KBUILD_BUILD_USER: builder
+      KBUILD_BUILD_HOST: github
+
+    steps:
+      - name: Baixar o repositorio
+        uses: actions/checkout@v4
+
+      # O runner vem com ~14 GB livres e precisamos de ~9 GB.
+      # Remover as SDKs pre-instaladas libera uns 25 GB.
+      - name: Liberar espaco em disco
+        run: |
+          echo "antes:"; df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          sudo apt-get clean
+          echo "depois:"; df -h / | tail -1
+
+      - name: Instalar dependencias
+        run: sudo bash build/01-deps.sh
+
+      - name: Clonar kernel e clang
+        run: bash build/02-fontes.sh
+
+      - name: Clonar binutils
+        run: bash build/03-gcc.sh
+
+      - name: Compilar
+        run: bash build/04-build.sh
+
+      # A conferencia decisiva: ler a config de DENTRO da Image gerada.
+      # E o que o aparelho vai reportar em /proc/config.gz.
+      - name: Verificar a imagem compilada
+        run: |
+          SRC="$KERNEL_BASE/src"
+          IMG="out/Image"
+          "$SRC/scripts/extract-ikconfig" "$IMG" > config-embutida.txt
+          echo "config extraida: $(wc -l < config-embutida.txt) linhas"
+          echo
+          FALTOU=0
+          for c in CONFIG_IPC_NS CONFIG_POSIX_MQUEUE CONFIG_CGROUP_DEVICE \
+                   CONFIG_CGROUP_FREEZER CONFIG_CPUSETS CONFIG_MEMCG CONFIG_KEYS \
+                   CONFIG_SECCOMP CONFIG_VETH CONFIG_BRIDGE CONFIG_BRIDGE_NETFILTER \
+                   CONFIG_LLC CONFIG_STP CONFIG_NF_NAT CONFIG_IP_NF_NAT \
+                   CONFIG_IP_NF_FILTER CONFIG_IP_NF_TARGET_MASQUERADE \
+                   CONFIG_NETFILTER_XT_MATCH_ADDRTYPE CONFIG_NF_CONNTRACK \
+                   CONFIG_OVERLAY_FS CONFIG_LTO_CLANG; do
+            v=$(grep -E "^${c}=" config-embutida.txt | cut -d= -f2)
+            if [ -n "$v" ]; then printf '  [%s] %s\n' "$v" "$c"
+            else printf '  [NAO] %s\n' "$c"; FALTOU=$((FALTOU+1)); fi
+          done
+          echo
+          if [ "$FALTOU" != "0" ]; then
+            echo "::error::$FALTOU requisito(s) ausente(s) na imagem - nao gravar"
+            exit 1
+          fi
+          echo "requisitos do Docker: todos presentes"
+          echo
+          echo "USER_NS deve estar DESLIGADO de proposito:"
+          grep -q "^CONFIG_USER_NS=y" config-embutida.txt \
+            && echo "  ::warning::USER_NS ligado - nao era o esperado" \
+            || echo "  [ok] desligado"
+
+      - name: Resumo
+        run: |
+          IMG=out/Image
+          {
+            echo "## Kernel compilado"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Branch | \`${BRANCH}\` |"
+            echo "| Aparelho | \`${DEVICE}\` |"
+            echo "| Fragmento | \`${FRAGMENTO}\` |"
+            echo "| Clang | \`${CLANG_VER}\` |"
+            echo "| Commit do kernel | \`$(git -C "$KERNEL_BASE/src" rev-parse --short=12 HEAD)\` |"
+            echo "| Tamanho | $(stat -c %s "$IMG") bytes |"
+            echo "| md5 | \`$(md5sum "$IMG" | cut -d' ' -f1)\` |"
+            echo
+            echo '```'
+            strings "$IMG" | grep -m1 "^Linux version"
+            echo '```'
+            echo
+            echo "Baixe o artefato **Image**, envie ao aparelho e siga \`flash/\` no README."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publicar artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: Image-${{ inputs.device }}-${{ inputs.branch }}
+          path: |
+            out/Image
+            config-embutida.txt
+          retention-days: 90
+
+      - name: Publicar release
+        if: ${{ inputs.release }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: kernel-${{ inputs.device }}-${{ inputs.branch }}-${{ github.run_number }}
+          name: Kernel ${{ inputs.device }} (${{ inputs.branch }})
+          files: out/Image
+          body: |
+            Kernel do LineageOS para Exynos 990 com suporte a Docker.
+
+            - Aparelho: `${{ inputs.device }}`
+            - Branch: `${{ inputs.branch }}`
+            - Fragmento: `${{ inputs.fragmento }}`
+            - Clang: `${{ inputs.clang }}`
+
+            Compilado com `LLVM=1 LLVM_IAS=1`, verificado opcao por opcao
+            dentro da imagem. Para gravar, veja `flash/` no README.

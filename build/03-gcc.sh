@@ -4,7 +4,7 @@
 # CROSS_COMPILE=aarch64-linux-android-, que vem deste prebuilt do AOSP.
 set -e
 
-BASE="$HOME/kernel"
+BASE="${KERNEL_BASE:-$HOME/kernel}"
 GCC="$BASE/gcc"
 
 if [ -x "$GCC/bin/aarch64-linux-android-ld" ]; then

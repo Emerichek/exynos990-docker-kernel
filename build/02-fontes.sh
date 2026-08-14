@@ -6,7 +6,7 @@ PROJECT_DIR="${PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 
 set -e
 
-BASE="$HOME/kernel"
+BASE="${KERNEL_BASE:-$HOME/kernel}"
 SRC="$BASE/src"
 CLANG="$BASE/clang"
 WINCFG="$PROJECT_DIR/docker-kernel.config"
@@ -18,7 +18,7 @@ if [ -d "$SRC/.git" ]; then
     echo ">> kernel ja clonado em $SRC"
 else
     echo "=== clonando o kernel (LineageOS universal9830, lineage-23.2) ==="
-    git clone --depth=1 -b lineage-23.2 \
+    git clone --depth=1 -b "${BRANCH:-lineage-23.2}" \
         https://github.com/LineageOS/android_kernel_samsung_universal9830 "$SRC"
 fi
 
@@ -28,7 +28,7 @@ if [ -x "$CLANG/bin/clang" ]; then
 else
     echo "=== clonando o clang-r416183b ==="
     git clone --depth=1 \
-        https://github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b \
+        https://github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-${CLANG_VER:-r416183b} \
         "$CLANG"
 fi
 
