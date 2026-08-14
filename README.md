@@ -380,6 +380,15 @@ research/    registro da investigação: 15 scripts de teste
 
 ---
 
+## Projeto relacionado
+
+Este repositório resolve **só o kernel**. Para o servidor Linux em si — imagem
+ext4, chroot com systemd, boot automático pelo Magisk, SSH — veja
+**[android-chroot-server](https://github.com/Emerichek/android-chroot-server)**,
+que inclui também a instalação e configuração do Docker dentro do chroot.
+
+---
+
 ## Licença
 
 MIT. Veja [LICENSE](LICENSE).
