@@ -1,0 +1,24 @@
+# artefatos de build - regenerar com build/04-build.sh
+out/
+*.img
+Image*
+*.tar
+*.tar.gz
+*.tar.xz
+
+# arvore do kernel e toolchains (~3,2 GB) - clonados por build/02-fontes.sh
+kernel/
+src/
+clang/
+gcc/
+
+# logs
+*.log
+last_kmsg*
+config-*.txt
+
+# platform-tools
+adb*
+fastboot*
+*.exe
+*.dll
